@@ -4,24 +4,37 @@
  # Build Your Own Camera
  
  In this playground we will build a basic camera using `AVFoundation`.
+
+ The aim of this Playground is to give you a simple, but complete, starting point to build your own camera Apps.
  
- The aim of this playground is to give you a simple, but complete, starting point to build your own camera Apps.
- 
+ This Playground will run on both iOS and macos, so make sure you select the correct platform from the Utilities pane (cmd + alt + 0).
+
+ Lets get started and import the frameworks we will need.
  */
 import PlaygroundSupport
+
+// importing AVFoundation gives access to all the API needed to build our camera.
 import AVFoundation
+
+// Import AppKit on macos
+#if os(OSX)
+import AppKit
+    
+// Otherwise import UIKit
+#else
+import UIKit
+#endif
+
 
 /*:
  ## Getting Started
  
- Lets build a basic media capture stack.
+ To capture data from the cameras and microphones available on your machine we need an `AVCaptureSession` instance.
  
  We will make a capture session and attach a video and an audio input to it.
  
- Adding some capture outputs will allow us to do something useful with the camera data.
- */
-
-/*:
+ Adding capture outputs to the session which allows us to do something useful with the camera data.
+ 
  ## Build the Capture Session
  
  We will need an instance of `AVCaptureSession` to build our camera.
@@ -32,7 +45,9 @@ let session = AVCaptureSession()
 /*:
  ### Add The Video Device
  
- We will add a new input. The input will add the default video device of the current iPhone or Mac to the session.
+ We will add a new input.
+ 
+ The input will connect the default video device of the current iPhone or Mac to the session.
  */
 
 if let videoDevice = AVCaptureDevice.default(for: .video)
@@ -69,12 +84,14 @@ else
 
 
 /*:
- ### Add The Audios Device
+ ### Add The Audio Device
  
- We now add an input to capture audio. We will use the default microphone of the current machine as a audio device of the session.
+ We now add an input to capture audio.
+ 
+ We will connect the default microphone of the current machine to the capture session.
  */
 
-// I have encoountered some issues attaching two channels (audio and video) in a Swift For iPad. So we will only capture audio on macos for now.
+// I've encoountered some issues attaching two channels (audio and video) in a Swift For iPad. So we will only capture audio on macos for now.
 
 #if os(OSX)
     
@@ -116,32 +133,28 @@ else
 /*:
  ### Show The Video
  
- We can show the video using a preview video [layer](https://developer.apple.com/documentation/quartzcore/calayer).
+ We can show the video of the capture session using a preview video [layer](https://developer.apple.com/documentation/quartzcore/calayer).
  
- _When working on macos, you should have a at AVKit, which provides some nice higher level objecs for video recoding UI._
+ _NOTE: When working on macos, you should have a look at at AVKit. There you will find some plug and play UI you can use to control the sessions recording.
  */
 
 let previewLayer = AVCaptureVideoPreviewLayer(session: session)
+
 previewLayer.videoGravity = .resizeAspect
 
 /*:
- Depending on the platform you want are running, you create an `UIView` or a `UIView` for `macos` and `iOS` respectively.
- 
- We will import the correct framework for the current platform. `AppKit` for _macos_, and `UIKit` for _iOS_.
+ Depending on the platform you want are running, we create a `NSView` or a `UIView` for `macos` and `iOS` respectively.
  */
 
-// Use AppKit when on macos
 
+// When os macos, use NSView
 #if os(OSX)
-import AppKit
     
 let view = NSView()
 view.layer = previewLayer
     
-    
-// Otherwise use UIKit
+// Otherwise use UIView
 #else
-import UIKit
     
 /*:
  For iOS we will use a `UIView` subclass making it a bit easier to layout the video preview layer.
@@ -163,15 +176,16 @@ class VideoViewView: UIView
 let view = VideoViewView()
 
 view.layer.addSublayer(previewLayer)
-
     
-
 #endif
+
+view.frame = CGRect(x: 0, y: 0, width: 700, height: 300)
+
 
 /*:
  ## Prepare For Data Capture
  
- In order to make use of the video and audio data we need an object to receive and process the data.
+ To make use of the video and audio data we need an object to receive and process the data.
  
  You can find the implementation of this object in `SourceCaptureDelegate.swift` in the `Sources` folder of this playground.
  
@@ -179,44 +193,64 @@ view.layer.addSublayer(previewLayer)
  
  ### Output Video
  
- Now that we have data coming in from the camera, we should do something with this data.
+ Now that we have video data coming in from the camera, we should do something with it.
  
  #### Raw Data
  
- In this playground we will not go into detail on how to process video and audio buffer.
+ To receive the raw video and audio packets, you will need to implement your own class(es).
  
- But in order to receive the raw video and audio packets, you will need to implement your own class(es).
+ The classes should conform to the `AVCaptureVideoDataOutputSampleBufferDelegate` protocol.
  
- The classes should conform to the
+ Our class should implement the `captureOutput(_, didOutput:, from:)` function where it will receive each video buffers in order.
 */
 
 let videoProcessor = VideoProcessor()
 
 
-// route the video to the SourceCaptureDelegate instance
+/*:
+ Using a `AVCaptureVideoDataOutput` we can direct the video data to our `VideoProcessor`.
+ */
 
 var videoDataOutput = AVCaptureVideoDataOutput()
 
-//: The data output delegate method will be called on it's own [dispatch queue](https://developer.apple.com/documentation/dispatch).
+
+/*:
+ We want the calls to `videoDataOutput.captureOutput` to happen on a seperate [dispatch queue](https://developer.apple.com/documentation/dispatch).
+ 
+ This will leave the main queue free to do other work.
+ */
 
 let videoQueue = DispatchQueue(label: "capture.video")
 
 /*:
- By setting the `videoProcessor` as the sample buffer delegate of the an `AVCaptureVideoDataOutput`, will received all video data via a call to `videoProcessor.captureOutput(_, didOutput:, from:)`.
+ By using the `videoProcessor` as the sample buffer delegate of the `videoDataOutput`, will start receiving received all video data via our `videoProcessor.captureOutput(_, didOutput:, from:)` function.
  */
 
 videoDataOutput.setSampleBufferDelegate(videoProcessor, queue: videoQueue)
 
-//: We can now add the video output to the av session.
+//: Connect the video output to the capture session.
 
-session.beginConfiguration()
+if session.canAddOutput(videoDataOutput)
+{
+    session.beginConfiguration()
+    
+    session.addOutput(videoDataOutput)
+    
+    session.commitConfiguration()
+}
 
-session.addOutput(videoDataOutput)
+else
+{
+    print("could not add video output to session")
+}
 
-session.commitConfiguration()
 
 
-//: ### Output Audio
+/*:
+ ### Output Audio
+ 
+ Now repeat the process with the audio.
+ */
 
 let audioProcessor = AudioProcessor()
 
@@ -226,29 +260,42 @@ let audioDataOutput = AVCaptureAudioDataOutput()
 
 let audioQueue = DispatchQueue(label: "capture.audio")
 
-//: And as we did with the video processor, we set the audio processor as the sample buffer delegate and add the audio data output to the session.
+//: As we did with the video processor, we use the audio processor as the sample buffer delegate of the audio data output.
 
 audioDataOutput.setSampleBufferDelegate(audioProcessor, queue: audioQueue)
 
-session.beginConfiguration()
+//: Connect the audio data output to the session
 
-session.addOutput(audioDataOutput)
+if session.canAddOutput(audioDataOutput)
+{
+    session.beginConfiguration()
+    
+    session.addOutput(audioDataOutput)
+    
+    session.commitConfiguration()
+}
 
-session.commitConfiguration()
+else
+{
+    print("could not add output to session")
+}
 
 
 /*:
  ### Start The Session
  
- Now we devices inputing audio and video data, outputs receiving the data, and a way to view what the camera is filming.
+ Devices can now input audio and video data, outputs can receive all this data, and there a way to view what the camera is filming.
  
  Time to start running the session.
  */
 
-session.startRunning()
-
 //: We can show the view in the live view of the playground.
 
 PlaygroundPage.current.liveView = view
+
 PlaygroundPage.current.needsIndefiniteExecution = true
+
+
+session.startRunning()
+
 
